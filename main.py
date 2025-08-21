@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+import sys
+import os
+
+# Ajouter le répertoire courant au path Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from scripts.filemaker_extractor import FileMakerExtractor
 
 

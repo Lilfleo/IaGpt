@@ -28,22 +28,38 @@ class FileMakerExtractor:
         payload = {"user": self.username, "password": self.password}
 
         try:
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, timeout=10)
+            logger.info(f"🔗 Connexion à: {url}")
+            logger.info(f"📊 Status: {response.status_code}")
+
             if response.status_code == 200:
-                self.session_token = response.json()["response"]["token"]
-                logger.info(f"✅ Connexion réussie à {self.database}")
+                data = response.json()
+                self.session_token = data['response']['token']
+                logger.info("✅ Connexion FileMaker réussie")
                 return True
             else:
                 logger.error(f"❌ Erreur connexion: {response.text}")
                 return False
+
         except Exception as e:
-            logger.error(f"❌ Erreur réseau: {e}")
+            logger.error(f"❌ Exception connexion: {e}")
             return False
 
-    def get_documents(self):
-        """Récupère la liste des documents depuis la table 'document'"""
+    def logout(self):
+        """Déconnexion"""
         if not self.session_token:
-            logger.error("❌ Pas de token de session")
+            return
+
+        url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/sessions/{self.session_token}"
+        try:
+            response = requests.delete(url)
+            logger.info("🔓 Déconnexion FileMaker")
+        except:
+            pass
+
+    def get_documents(self):
+        """Récupère la liste des documents"""
+        if not self.session_token:
             return None
 
         url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/layouts/document/records"
@@ -53,70 +69,10 @@ class FileMakerExtractor:
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"✅ Récupéré {len(data['response']['data'])} documents")
                 return data['response']['data']
             else:
-                logger.error(f"❌ Erreur récupération documents: {response.text}")
+                logger.error(f"❌ Erreur récupération docs: {response.text}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Erreur: {e}")
+            logger.error(f"❌ Exception récupération: {e}")
             return None
-
-    def extract_pdf(self, record_id, filename_prefix="doc"):
-        """Extrait un PDF spécifique par record_id"""
-        if not self.session_token:
-            logger.error("❌ Pas de token de session")
-            return None
-
-        url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/layouts/document/records/{record_id}/containers/fichier/1"
-        headers = {"Authorization": f"Bearer {self.session_token}"}
-
-        try:
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                filename = f"{filename_prefix}_{record_id}.pdf"
-                filepath = self.extraction_path / filename
-
-                with open(filepath, 'wb') as f:
-                    f.write(response.content)
-
-                logger.info(f"✅ PDF extrait: {filepath}")
-                return str(filepath)
-            else:
-                logger.error(f"❌ Erreur extraction PDF {record_id}: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"❌ Erreur extraction: {e}")
-            return None
-
-    def extract_all_pdfs(self):
-        """Extrait tous les PDFs de la base"""
-        documents = self.get_documents()
-        if not documents:
-            return []
-
-        extracted_files = []
-        for i, doc in enumerate(documents):
-            record_id = doc['recordId']
-            filepath = self.extract_pdf(record_id, f"rapport_{i + 1}")
-            if filepath:
-                extracted_files.append(filepath)
-
-        logger.info(f"✅ {len(extracted_files)} PDFs extraits au total")
-        return extracted_files
-
-    def logout(self):
-        """Ferme la session FileMaker"""
-        if self.session_token:
-            url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/sessions/{self.session_token}"
-            requests.delete(url)
-            logger.info("✅ Session fermée")
-
-
-# Test simple
-if __name__ == "__main__":
-    extractor = FileMakerExtractor()
-    if extractor.login():
-        documents = extractor.get_documents()
-        print(f"Nombre de documents trouvés: {len(documents) if documents else 0}")
-        extractor.logout()

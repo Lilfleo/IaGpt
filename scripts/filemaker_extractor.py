@@ -1,86 +1,97 @@
 import requests
-import json
 import base64
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+import urllib3
 import logging
+import json
+from dotenv import load_dotenv
+import os
 
-# Configuration logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class FileMakerExtractor:
     def __init__(self):
         load_dotenv('config/config.env')
-        self.server_url = os.getenv('FILEMAKER_SERVER')
+        self.server = os.getenv('FILEMAKER_SERVER')
         self.database = os.getenv('FILEMAKER_DATABASE')
         self.username = os.getenv('FILEMAKER_USERNAME')
         self.password = os.getenv('FILEMAKER_PASSWORD')
-        self.session_token = None
-        self.extraction_path = Path(os.getenv('PDF_EXTRACTION_PATH', './data/extracted_pdfs'))
-        self.extraction_path.mkdir(parents=True, exist_ok=True)
+        self.token = None
+
+        # Logger
+        self.logger = logging.getLogger(__name__)
 
     def login(self):
         """Connexion à FileMaker Data API"""
-        url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/sessions"
-        payload = {
-            "fmDataSource": [
-                {
-                    "database": self.database,
-                    "username": self.username,
-                    "password": self.password
-                }
-            ]
+        url = f"{self.server}/fmi/data/v1/databases/{self.database}/sessions"
+
+        # Authentification Basic (base64)
+        credentials = f"{self.username}:{self.password}"
+        credentials_b64 = base64.b64encode(credentials.encode()).decode()
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Basic {credentials_b64}'
         }
 
+        payload = {}  # Payload vide pour FileMaker
+
+        self.logger.info(f"🔗 Connexion à: {url}")
+
         try:
-            response = requests.post(url, json=payload, timeout=10, verify=False)
-            logger.info(f"🔗 Connexion à: {url}")
-            logger.info(f"📊 Status: {response.status_code}")
+            response = requests.post(url, json=payload, headers=headers, timeout=10, verify=False)
+
+            self.logger.info(f"📊 Status: {response.status_code}")
 
             if response.status_code == 200:
                 data = response.json()
-                self.session_token = data['response']['token']
-                logger.info("✅ Connexion FileMaker réussie")
+                self.token = data['response']['token']
+                self.logger.info("✅ Connexion réussie!")
                 return True
             else:
-                logger.error(f"❌ Erreur connexion: {response.text}")
+                self.logger.error(f"❌ Erreur connexion: {response.text}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Exception connexion: {e}")
+            self.logger.error(f"💥 Exception: {str(e)}")
             return False
-
-    def logout(self):
-        """Déconnexion"""
-        if not self.session_token:
-            return
-
-        url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/sessions/{self.session_token}"
-        try:
-            response = requests.delete(url)
-            logger.info("🔓 Déconnexion FileMaker")
-        except:
-            pass
 
     def get_documents(self):
         """Récupère la liste des documents"""
-        if not self.session_token:
-            return None
+        if not self.token:
+            self.logger.error("❌ Pas de token, connexion requise")
+            return []
 
-        url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/layouts/document/records"
-        headers = {"Authorization": f"Bearer {self.session_token}"}
+        # URL pour récupérer les enregistrements (ajustez le nom de la table)
+        url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Documents/records"
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
 
         try:
             response = requests.get(url, headers=headers, verify=False)
+
             if response.status_code == 200:
                 data = response.json()
-                return data['response']['data']
+                documents = data['response']['data']
+                self.logger.info(f"📄 {len(documents)} documents trouvés")
+                return documents
             else:
-                logger.error(f"❌ Erreur récupération docs: {response.text}")
-                return None
+                self.logger.error(f"❌ Erreur récupération: {response.text}")
+                return []
+
         except Exception as e:
-            logger.error(f"❌ Exception récupération: {e}")
-            return None
+            self.logger.error(f"💥 Exception: {str(e)}")
+            return []
+
+    def logout(self):
+        """Déconnexion"""
+        if self.token:
+            url = f"{self.server}/fmi/data/v1/databases/{self.database}/sessions/{self.token}"
+            try:
+                requests.delete(url, verify=False)
+                self.logger.info("👋 Déconnexion")
+            except:
+                pass

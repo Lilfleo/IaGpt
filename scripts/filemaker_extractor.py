@@ -25,10 +25,18 @@ class FileMakerExtractor:
     def login(self):
         """Connexion à FileMaker Data API"""
         url = f"{self.server_url}/fmi/data/v1/databases/{self.database}/sessions"
-        payload = {"user": self.username, "password": self.password}
+        payload = {
+            "fmDataSource": [
+                {
+                    "database": self.database,
+                    "username": self.username,
+                    "password": self.password
+                }
+            ]
+        }
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=10, verify=False)
             logger.info(f"🔗 Connexion à: {url}")
             logger.info(f"📊 Status: {response.status_code}")
 
@@ -66,7 +74,7 @@ class FileMakerExtractor:
         headers = {"Authorization": f"Bearer {self.session_token}"}
 
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, verify=False)
             if response.status_code == 200:
                 data = response.json()
                 return data['response']['data']

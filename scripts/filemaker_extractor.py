@@ -96,60 +96,61 @@ class FileMakerExtractor:
             except:
                 pass
 
-
-def download_pdf(self, pdf_url, output_path):
-    """Télécharge un PDF depuis FileMaker Server"""
-    headers = {
-        'Authorization': f'Bearer {self.token}'
-    }
-
-    try:
-        response = requests.get(pdf_url, headers=headers, verify=False, stream=True)
-
-        if response.status_code == 200:
-            with open(output_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-            self.logger.info(f"✅ PDF téléchargé: {output_path}")
-            return True
-        else:
-            self.logger.error(f"❌ Erreur téléchargement: {response.status_code}")
-            return False
-
-    except Exception as e:
-        self.logger.error(f"💥 Exception téléchargement: {str(e)}")
-        return False
-
-
-def create_chunk(self, doc_id, text, chunk_index, embedding_json=""):
-    """Créer un chunk dans FileMaker"""
-    url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/records"
-
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {self.token}'
-    }
-
-    payload = {
-        "fieldData": {
-            "idDocument": str(doc_id),
-            "Text": text,
-            "EmbeddingJson": embedding_json,
-            "Norme": f"chunk_{chunk_index}"
+    def download_pdf(self, pdf_url, output_path):
+        """Télécharge un PDF depuis FileMaker Server"""
+        headers = {
+            'Authorization': f'Bearer {self.token}'
         }
-    }
 
-    try:
-        response = requests.post(url, json=payload, headers=headers, verify=False)
+        try:
+            response = requests.get(pdf_url, headers=headers, verify=False, stream=True)
 
-        if response.status_code == 201:
-            self.logger.info(f"✅ Chunk {chunk_index} créé pour doc {doc_id}")
-            return True
-        else:
-            self.logger.error(f"❌ Erreur chunk: {response.text}")
+            if response.status_code == 200:
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                self.logger.info(f"✅ PDF téléchargé: {output_path}")
+                return True
+            else:
+                self.logger.error(f"❌ Erreur téléchargement: {response.status_code}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"💥 Exception téléchargement: {str(e)}")
             return False
 
-    except Exception as e:
-        self.logger.error(f"💥 Exception chunk: {str(e)}")
-        return False
+    def create_chunk(self, doc_id, text, chunk_index, embedding_json=""):
+        """Créer un chunk dans FileMaker"""
+        url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/records"
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        payload = {
+            "fieldData": {
+                "idDocument": str(doc_id),
+                "Text": text,
+                "EmbeddingJson": embedding_json,
+                "Norme": f"chunk_{chunk_index}"
+            }
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, verify=False)
+
+            if response.status_code == 201:
+                self.logger.info(f"✅ Chunk {chunk_index} créé pour doc {doc_id}")
+                return True
+            else:
+                self.logger.error(f"❌ Erreur chunk: {response.text}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"💥 Exception chunk: {str(e)}")
+            return False
+
+
+

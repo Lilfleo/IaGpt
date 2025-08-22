@@ -107,6 +107,9 @@ searcher = RAGSearcher()
 def search():
     try:
         print("🔍 Requête reçue")
+
+
+
         data = request.get_json()
         print(f"📝 Question: {data.get('question')}")
 

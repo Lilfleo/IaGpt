@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class FileMakerExtractor:
     def __init__(self):
-        load_dotenv('config/config.env')
+        load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'config.env'))
         self.server = os.getenv('FILEMAKER_SERVER')
         self.database = os.getenv('FILEMAKER_DATABASE')
         self.username = os.getenv('FILEMAKER_USERNAME')

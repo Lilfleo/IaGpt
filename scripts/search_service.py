@@ -105,15 +105,30 @@ searcher = RAGSearcher()
 
 @app.route('/search', methods=['POST'])
 def search():
-    data = request.json
-    question = data.get('question', '')
+    try:
+        print("🔍 Requête reçue")
+        data = request.get_json()
+        print(f"📝 Question: {data.get('question')}")
 
-    if not question:
-        return jsonify({"error": "Question requise"}), 400
+        question = data.get('question')
+        if not question:
+            return jsonify({"error": "Question manquante"}), 400
 
-    result = searcher.search(question)
-    return jsonify(result)
+        print("🚀 Début recherche...")
+
+        # 🎯 LIGNE MANQUANTE - Appel de la recherche !
+        result = searcher.search(question)
+
+        print("✅ Recherche terminée")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ ERREUR: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Connexion impossible"}), 500
 
 
+# 🎯 LIGNE MANQUANTE - Démarrage du serveur !
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9000, debug=True)

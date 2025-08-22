@@ -141,7 +141,7 @@ class FileMakerExtractor:
         try:
             response = requests.post(url, json=payload, headers=headers, verify=False)
 
-            if response.status_code == 201:
+            if response.status_code in [200, 201]:  # ← CORRECT
                 self.logger.info(f"✅ Chunk {chunk_index} créé pour doc {doc_id}")
                 return True
             else:

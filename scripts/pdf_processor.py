@@ -5,7 +5,7 @@ import json
 import PyPDF2
 from sentence_transformers import SentenceTransformer
 import numpy as np
-from scripts.filemaker_extractor import FileMakerExtractor
+from filemaker_extractor import FileMakerExtractor
 import logging
 
 logging.basicConfig(level=logging.INFO)

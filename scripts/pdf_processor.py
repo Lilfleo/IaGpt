@@ -7,6 +7,7 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 from filemaker_extractor import FileMakerExtractor
 import logging
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -147,10 +148,10 @@ def main(start_index=0, batch_size=50):
 
 
 if __name__ == "__main__":
-    import sys
+
 
     start = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    batch = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    batch = int(sys.argv[2]) if len(sys.argv) > 2 else 450
     main(start, batch)
 
 if __name__ == "__main__":

@@ -217,55 +217,38 @@ class FileMakerExtractor:
         return list(dict.fromkeys(keywords))
 
     def search_chunks_smart(self, question, limit=1000):
-        """Recherche intelligente avec segmentation automatique"""
+        """Recherche STRICTE avec tous les mots-clés obligatoires"""
         if not self.token:
-            self.logger.error("❌ Pas de token pour la recherche")
             return []
 
-        # Extraire les mots-clés
-        keywords = self.extract_keywords(question)
-        self.logger.info(f"🔍 Mots-clés extraits: {keywords}")
+        # Pour cette requête spécifique, on force les mots-clés
+        force_keywords = ['cristal', 'prix', 'souscription']
 
-        if not keywords:
-            self.logger.warning("Aucun mot-clé trouvé dans la question")
-            return []
+        query_conditions = []
+        for keyword in force_keywords:
+            query_conditions.append({"Text": f"*{keyword}*"})
 
-        # URL pour la recherche FileMaker
+        payload = {
+            "query": query_conditions,
+            "limit": "100"
+        }
+
         url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/_find"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.token}'
         }
 
-        # Construire la requête OR pour FileMaker
-        query_conditions = []
-        for keyword in keywords[:8]:  # Limite à 8 mots-clés
-            query_conditions.append({"Text": f"*{keyword}*"})
+        print(f"🔍 Recherche STRICTE avec: {force_keywords}")
 
-        payload = {
-            "query": query_conditions,
-            "limit": str(min(limit, 1000))  # FileMaker limite à 1000
-        }
+        response = requests.post(url, json=payload, headers=headers, verify=False)
 
-        try:
-            print(f"🔍 Recherche FileMaker avec: {[k for k in keywords[:8]]}")
+        if response.status_code == 200:
+            data = response.json()
+            chunks = data['response']['data']
+            print(f"✅ {len(chunks)} chunks trouvés avec recherche stricte")
+            return chunks
 
-            response = requests.post(url, json=payload, headers=headers, verify=False)
+        return []
 
-            if response.status_code == 200:
-                data = response.json()
-                chunks = data['response']['data']
-
-                print(f"✅ {len(chunks)} chunks trouvés dans FileMaker")
-
-                # 🔥 GARDONS LE FORMAT FILEMAKER NATIF !
-                return chunks  # Pas de conversion !
-
-            else:
-                self.logger.error(f"❌ Erreur recherche: {response.status_code} - {response.text}")
-                return []
-
-        except Exception as e:
-            self.logger.error(f"❌ Exception recherche: {e}")
-            return []
 

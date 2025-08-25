@@ -21,22 +21,37 @@ class RAGSearcher:
         self.extractor = FileMakerExtractor()
         self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-    def search(self, question, top_k=5):
-        """Recherche sémantique optimisée avec pagination"""
-        print(f"🔍 Recherche: {question}")
-
-        if not self.extractor.login():
-            return {"error": "Connexion impossible"}
-
+    def search(self, question):
+        """Recherche principale avec logging détaillé"""
         try:
-            # Recherche avec pagination
-            top_chunks = self.search_with_pagination(question, top_k)
+            print(f"🔍 Phase 1: Recherche textuelle dans FileMaker...")
+            top_chunks = self.search_with_pagination(question, top_k=20)
 
-            if not top_chunks:
-                return {"error": "Aucun résultat trouvé"}
+            # 🔥 DEBUG : MONTRER LES CHUNKS RÉCUPÉRÉS
+            print(f"\n🔍 CHUNKS RÉCUPÉRÉS (TOP 5):")
+            for i, chunk in enumerate(top_chunks[:5]):
+                chunk_data = chunk['fieldData'] if 'fieldData' in chunk else chunk
+                text = chunk_data.get('Text', '')[:200]
+                doc_id = chunk_data.get('idDocument', 'N/A')
+                print(f"--- CHUNK {i + 1} ---")
+                print(f"Doc: {doc_id}")
+                print(f"Texte: {text}...")
 
-            # Générer réponse
-            context = "\n".join([chunk['text'] for chunk in top_chunks])
+                # Vérifier la présence des mots-clés
+                text_lower = text.lower()
+                keywords_found = []
+                if 'cristal' in text_lower: keywords_found.append('cristal')
+                if 'prix' in text_lower: keywords_found.append('prix')
+                if 'souscription' in text_lower: keywords_found.append('souscription')
+                if 'rente' in text_lower: keywords_found.append('rente')
+                if '2022' in text_lower: keywords_found.append('2022')
+
+                print(f"Mots-clés présents: {keywords_found}")
+
+            # Continue avec la génération...
+            context = self.prepare_context(top_chunks[:5])
+            # ... reste identique
+
             response = self.generate_answer(question, context)
 
             return {

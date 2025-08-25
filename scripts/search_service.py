@@ -74,7 +74,8 @@ class RAGSearcher:
             return [{
                 'text': rec['fieldData'].get('Text', ''),
                 'embedding': rec['fieldData'].get('EmbeddingJson', ''),
-                'document_id': rec['fieldData'].get('idDocument', '')
+                'document_id': rec['fieldData'].get('idDocument', ''),
+                'document_name': rec['fieldData'].get('DocumentName', 'Document')  # ← CORRIGÉ
             } for rec in records]
         return []
 

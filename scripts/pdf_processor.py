@@ -135,7 +135,7 @@ def main():
     logger.info(f"📁 {len(documents)} documents à traiter")
 
     # Traitement (limitons à 5 pour le test)
-    for i, doc in enumerate(documents[:5]):
+    for i, doc in enumerate(documents[:50]):
         logger.info(f"🔄 Document {i + 1}/{min(5, len(documents))}")
         processor.process_document(doc)
 

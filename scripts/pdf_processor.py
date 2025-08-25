@@ -121,27 +121,37 @@ class PDFProcessor:
         return True
 
 
-def main():
-    """Traitement principal"""
+def main(start_index=0, batch_size=50):
+    """Traitement principal avec pagination"""
     processor = PDFProcessor()
 
-    # Connexion FileMaker
     if not processor.extractor.login():
         logger.error("❌ Connexion FileMaker échouée")
         return
 
-    # Récupération des documents
     documents = processor.extractor.get_documents()
-    logger.info(f"📁 {len(documents)} documents à traiter")
+    logger.info(f"📁 {len(documents)} documents total")
 
-    # Traitement (limitons à 5 pour le test)
-    for i, doc in enumerate(documents[:50]):
-        logger.info(f"🔄 Document {i + 1}/{min(5, len(documents))}")
+    # Traitement par batch
+    end_index = min(start_index + batch_size, len(documents))
+    batch_docs = documents[start_index:end_index]
+
+    logger.info(f"🔄 Traitement documents {start_index + 1} à {end_index}")
+
+    for i, doc in enumerate(batch_docs):
+        logger.info(f"🔄 Document {start_index + i + 1}/{len(documents)}")
         processor.process_document(doc)
 
     processor.extractor.logout()
-    logger.info("✅ Traitement terminé")
+    logger.info(f"✅ Batch {start_index}-{end_index} terminé")
 
+
+if __name__ == "__main__":
+    import sys
+
+    start = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+    batch = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    main(start, batch)
 
 if __name__ == "__main__":
     main()

@@ -219,7 +219,7 @@ RÉPONSE:"""
                         'num_ctx': 4096  # Plus de contexte
                     }
                 },
-                timeout=45
+                timeout=180
             )
 
             if response.status_code == 200:

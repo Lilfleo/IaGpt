@@ -66,20 +66,31 @@ class RAGSearcher:
         return chunks_direct
 
     def search(self, question):
-        """Recherche principale avec gestion complète"""
+        """Recherche principale avec gestion complète et timing"""
+        import time
+
+        # 🚀 TIMER GLOBAL
+        total_start = time.time()
         extractor = None
 
         try:
-            print(f"🔍 Début de recherche pour: '{question}'")
+            print(f"⏰ DÉBUT recherche: '{question}'")
 
             # 1️⃣ CONNEXION FILEMAKER
+            conn_start = time.time()
             extractor = self.connect_filemaker()
+            conn_time = time.time() - conn_start
+            print(f"📡 Connexion FileMaker: {conn_time:.2f}s")
+
             if not extractor:
                 return self.error_response(question, "Impossible de se connecter à la base de données")
 
             # 2️⃣ RECHERCHE TEXTUELLE PRÉALABLE
+            search_start = time.time()
             print(f"🔍 Phase 1: Recherche textuelle...")
             raw_chunks = self.enhanced_search(extractor, question)
+            search_time = time.time() - search_start
+            print(f"🔍 Recherche textuelle: {search_time:.2f}s")
 
             if not raw_chunks:
                 print("❌ Aucun chunk trouvé")
@@ -88,9 +99,13 @@ class RAGSearcher:
             print(f"📊 {len(raw_chunks)} chunks trouvés par recherche textuelle")
 
             # 3️⃣ CALCUL SIMILARITÉS SÉMANTIQUES
+            similarity_start = time.time()
             print(f"🧮 Phase 2: Calcul des similarités...")
             top_chunks = self.calculate_similarities(question, raw_chunks)
-            # APRÈS la ligne top_chunks = self.calculate_similarities(...)
+            similarity_time = time.time() - similarity_start
+            print(f"🧮 Calcul similarités: {similarity_time:.2f}s")
+
+            # DEBUG - TOP 3 CHUNKS TROUVÉS
             print("🔍 DEBUG - TOP 3 CHUNKS TROUVÉS :")
             for i, chunk in enumerate(top_chunks[:3]):
                 chunk_data = chunk['fieldData'] if 'fieldData' in chunk else chunk
@@ -104,30 +119,53 @@ class RAGSearcher:
                 return self.empty_response(question, "Aucun chunk avec embedding valide trouvé")
 
             # 4️⃣ DEBUG DES CHUNKS SÉLECTIONNÉS
+            debug_start = time.time()
             self.debug_chunks(top_chunks[:5], question)
+            debug_time = time.time() - debug_start
+            print(f"🔍 Debug chunks: {debug_time:.2f}s")
 
             # 5️⃣ GÉNÉRATION DE LA RÉPONSE
+            ai_start = time.time()
             context = self.prepare_context(top_chunks[:5])
             response = self.generate_answer(question, context)
+            ai_time = time.time() - ai_start
+            print(f"🤖 Génération IA: {ai_time:.2f}s")
 
-            # 6️⃣ RÉSULTAT FINAL
-            return {
+            # 6️⃣ TEMPS TOTAL
+            total_time = time.time() - total_start
+            print(f"⏱️ TEMPS TOTAL: {total_time:.2f}s")
+
+            # 7️⃣ RÉSULTAT FINAL AVEC TIMING
+            result = {
                 "question": question,
                 "response": response,
                 "sources": [chunk['document_name'] for chunk in top_chunks[:5]],
                 "chunks_analyzed": len(top_chunks),
-                "status": "success"
+                "status": "success",
+                "timing": {
+                    "total": f"{total_time:.2f}s",
+                    "connexion": f"{conn_time:.2f}s",
+                    "recherche_textuelle": f"{search_time:.2f}s",
+                    "calcul_similarites": f"{similarity_time:.2f}s",
+                    "debug": f"{debug_time:.2f}s",
+                    "generation_ia": f"{ai_time:.2f}s"
+                }
             }
 
+            return result
+
         except Exception as e:
-            print(f"❌ ERREUR GLOBALE: {e}")
+            total_time = time.time() - total_start
+            print(f"❌ ERREUR après {total_time:.2f}s: {e}")
             return self.error_response(question, f"Erreur interne: {str(e)}")
 
         finally:
-            # 7️⃣ NETTOYAGE
+            # 8️⃣ NETTOYAGE
             if extractor:
+                logout_start = time.time()
                 extractor.logout()
-                print("🔌 Connexion FileMaker fermée")
+                logout_time = time.time() - logout_start
+                print(f"🔌 Déconnexion: {logout_time:.2f}s")
 
     def calculate_similarities(self, question, raw_chunks, top_k=20):
         """Calcule les similarités sémantiques avec debug détaillé"""

@@ -258,18 +258,8 @@ class FileMakerExtractor:
 
                 print(f"✅ {len(chunks)} chunks trouvés dans FileMaker")
 
-                # Convertir au format attendu
-                result_chunks = []
-                for chunk in chunks:
-                    chunk_data = chunk['fieldData']
-                    result_chunks.append({
-                        'idChunk': chunk['recordId'],
-                        'idDocument': chunk_data.get('idDocument', ''),
-                        'Text': chunk_data.get('Text', ''),
-                        'EmbeddingJson': chunk_data.get('EmbeddingJson', '')
-                    })
-
-                return result_chunks
+                # 🔥 GARDONS LE FORMAT FILEMAKER NATIF !
+                return chunks  # Pas de conversion !
 
             else:
                 self.logger.error(f"❌ Erreur recherche: {response.status_code} - {response.text}")
@@ -278,3 +268,4 @@ class FileMakerExtractor:
         except Exception as e:
             self.logger.error(f"❌ Exception recherche: {e}")
             return []
+

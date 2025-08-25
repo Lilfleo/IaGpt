@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-import locale
 from flask import Flask, request, jsonify
 import sys
 import os
+import locale
+locale.setlocale(locale.LC_ALL, 'fr_FR.UTF-8')
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from scripts.filemaker_extractor import FileMakerExtractor
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import json
 import requests
 
-locale.setlocale((locale.LC_ALL, "fr_FR.UTF-8"))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 app = Flask(__name__)
 
 

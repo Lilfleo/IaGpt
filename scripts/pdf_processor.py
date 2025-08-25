@@ -76,15 +76,21 @@ class PDFProcessor:
         embeddings = self.embedding_model.encode(texts)
         return embeddings
 
-    def process_document(self, document_record):
+    def process_document(self, document_record, doc_index, total_docs):
         """Traite un document complet"""
         record_id = document_record['recordId']
         field_data = document_record['fieldData']
-        filename = field_data.get('Nom_fichier', '')
+        filename = field_data.get('Nom_fichier', 'Inconnu')
         pdf_url = field_data.get('fichier', '')
         existing_text = field_data.get('text', '')
 
-        logger.info(f"🔄 Traitement: {filename}")
+        # ✅ VÉRIFICATION ANTI-DOUBLON
+        existing_chunks = self.extractor.get_chunks_for_document(record_id)
+        if existing_chunks and len(existing_chunks) > 0:
+            logger.info(f"⏭️ [{doc_index}/{total_docs}] {filename} - Déjà traité ({len(existing_chunks)} chunks)")
+            return True
+
+        logger.info(f"🔄 [{doc_index}/{total_docs}] Nouveau traitement: {filename}")
 
         # Si pas de texte extrait, on utilise le PDF
         if not existing_text or len(existing_text.strip()) < 100:
@@ -109,20 +115,35 @@ class PDFProcessor:
 
         # Chunking
         chunks = self.chunk_text(text)
-        logger.info(f"📝 {len(chunks)} chunks créés pour {filename}")
+        logger.info(f"📝 {len(chunks)} chunks créés")
+
+        if not chunks:
+            logger.warning(f"⚠️ Aucun chunk créé pour {filename}")
+            return False
 
         # Génération des embeddings
-        embeddings = self.generate_embeddings(chunks)
+        try:
+            embeddings = self.generate_embeddings(chunks)
+            logger.info(f"🧮 Embeddings générés")
+        except Exception as e:
+            logger.error(f"❌ Erreur embeddings: {str(e)}")
+            return False
 
         # Sauvegarde dans FileMaker
+        success_count = 0
         for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            embedding_json = json.dumps(embedding.tolist())
-            self.extractor.create_chunk(record_id, chunk, i + 1, embedding_json)
+            try:
+                embedding_json = json.dumps(embedding.tolist())
+                if self.extractor.create_chunk(record_id, chunk, i + 1, embedding_json):
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"❌ Erreur sauvegarde chunk {i + 1}: {str(e)}")
 
-        return True
+        logger.info(f"✅ {success_count}/{len(chunks)} chunks sauvegardés")
+        return success_count > 0
 
 
-def main(start_index=0, batch_size=50):
+def main(start_index=0, batch_size=450):
     """Traitement principal avec pagination"""
     processor = PDFProcessor()
 
@@ -130,29 +151,52 @@ def main(start_index=0, batch_size=50):
         logger.error("❌ Connexion FileMaker échouée")
         return
 
+    # Récupère TOUS les documents
     documents = processor.extractor.get_documents()
-    logger.info(f"📁 {len(documents)} documents total")
+    total_docs = len(documents)
 
-    # Traitement par batch
-    end_index = min(start_index + batch_size, len(documents))
+    if total_docs == 0:
+        logger.error("❌ Aucun document trouvé")
+        processor.extractor.logout()
+        return
+
+    logger.info(f"📁 {total_docs} documents trouvés au total")
+
+    # Calcul de la plage de traitement
+    end_index = min(start_index + batch_size, total_docs)
     batch_docs = documents[start_index:end_index]
 
-    logger.info(f"🔄 Traitement documents {start_index + 1} à {end_index}")
+    logger.info(f"🎯 Traitement: documents {start_index + 1} à {end_index}")
+    logger.info(f"📊 Batch: {len(batch_docs)} documents à traiter")
+
+    # Traitement
+    processed = 0
+    skipped = 0
+    errors = 0
 
     for i, doc in enumerate(batch_docs):
-        logger.info(f"🔄 Document {start_index + i + 1}/{len(documents)}")
-        processor.process_document(doc)
+        doc_index = start_index + i + 1
+
+        try:
+            success = processor.process_document(doc, doc_index, total_docs)
+            if success:
+                processed += 1
+            else:
+                errors += 1
+        except Exception as e:
+            logger.error(f"💥 Erreur document {doc_index}: {str(e)}")
+            errors += 1
+
+    # Résumé final
+    logger.info(f"🏁 RÉSUMÉ du batch {start_index}-{end_index}:")
+    logger.info(f"   ✅ Traités: {processed}")
+    logger.info(f"   ⏭️ Déjà faits: {skipped}")
+    logger.info(f"   ❌ Erreurs: {errors}")
 
     processor.extractor.logout()
-    logger.info(f"✅ Batch {start_index}-{end_index} terminé")
 
 
 if __name__ == "__main__":
-
-
     start = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     batch = int(sys.argv[2]) if len(sys.argv) > 2 else 450
     main(start, batch)
-
-if __name__ == "__main__":
-    main()

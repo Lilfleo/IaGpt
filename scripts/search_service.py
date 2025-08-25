@@ -100,55 +100,126 @@ class RAGSearcher:
                 print("🔌 Connexion FileMaker fermée")
 
     def calculate_similarities(self, question, raw_chunks, top_k=20):
-        """Calcule les similarités sémantiques et retourne les meilleurs chunks"""
+        """Calcule les similarités sémantiques avec debug détaillé"""
+        print(f"\n🔍 DEBUG CALCULATE_SIMILARITIES")
+        print(f"📊 Nombre de chunks reçus: {len(raw_chunks)}")
 
         # Embedding de la question
         question_embedding = self.model.encode([question])
         question_vec = question_embedding[0]
+        print(f"🧮 Question embedding shape: {len(question_vec)}")
 
         similarities = []
         processed = 0
+        errors = 0
+
+        for i, chunk_record in enumerate(raw_chunks[:5]):  # Debug sur les 5 premiers
+            try:
+                print(f"\n--- CHUNK {i + 1} DEBUG ---")
+
+                # Extraction des données du chunk
+                chunk_data = chunk_record['fieldData'] if 'fieldData' in chunk_record else chunk_record
+                print(f"📄 Record ID: {chunk_record.get('recordId')}")
+                print(f"📄 Chunk data keys: {list(chunk_data.keys())}")
+
+                text = chunk_data.get('Text', '').strip()
+                embedding_json = chunk_data.get('EmbeddingJson', '')
+                doc_id = chunk_data.get('idDocument', 'N/A')
+
+                print(f"📝 Text présent: {'OUI' if text else 'NON'} ({len(text)} chars)")
+                print(f"🧮 EmbeddingJson type: {type(embedding_json)}")
+                print(f"🧮 EmbeddingJson présent: {'OUI' if embedding_json else 'NON'}")
+
+                if embedding_json:
+                    print(f"🧮 EmbeddingJson length: {len(str(embedding_json))} caractères")
+                    print(f"🧮 EmbeddingJson preview: {str(embedding_json)[:100]}...")
+
+                    # Test de parsing
+                    if isinstance(embedding_json, str):
+                        print("🔧 Tentative de parsing JSON string...")
+                        chunk_embedding = np.array(json.loads(embedding_json))
+                    else:
+                        print("🔧 Déjà un objet, conversion directe...")
+                        chunk_embedding = np.array(embedding_json)
+
+                    print(f"✅ Embedding parsé OK, shape: {chunk_embedding.shape}")
+
+                    # Validation des dimensions
+                    if len(chunk_embedding) != len(question_vec):
+                        print(f"❌ ERREUR DIMENSION: chunk={len(chunk_embedding)} vs question={len(question_vec)}")
+                        continue
+
+                    # Calcul de similarité cosinus
+                    similarity = np.dot(question_vec, chunk_embedding) / (
+                            np.linalg.norm(question_vec) * np.linalg.norm(chunk_embedding)
+                    )
+                    print(f"🎯 Similarité calculée: {similarity:.6f}")
+
+                    similarities.append({
+                        'similarity': float(similarity),
+                        'text': text,
+                        'document_id': doc_id,
+                        'document_name': f"Doc_{doc_id}",
+                        'raw_data': chunk_data
+                    })
+                    processed += 1
+
+                else:
+                    print(f"❌ Pas d'embedding - SKIPPÉ")
+
+            except json.JSONDecodeError as e:
+                print(f"❌ Erreur JSON parsing: {e}")
+                errors += 1
+            except Exception as e:
+                print(f"❌ Erreur générale: {e}")
+                errors += 1
+
+        print(f"\n📊 RÉSUMÉ DEBUG:")
+        print(f"   ✅ Traités avec succès: {processed}")
+        print(f"   ❌ Erreurs: {errors}")
+
+        # Continuez le traitement pour TOUS les chunks (pas juste les 5 premiers)
+        print(f"\n🔄 TRAITEMENT COMPLET DE TOUS LES CHUNKS...")
 
         for chunk_record in raw_chunks:
             try:
-                # Extraction des données du chunk
                 chunk_data = chunk_record['fieldData'] if 'fieldData' in chunk_record else chunk_record
                 text = chunk_data.get('Text', '').strip()
                 embedding_json = chunk_data.get('EmbeddingJson', '').strip()
                 doc_id = chunk_data.get('idDocument', 'N/A')
 
-                # Validation du contenu
                 if not text or not embedding_json:
                     continue
 
                 # Parsing de l'embedding
-                chunk_embedding = np.array(json.loads(embedding_json))
+                chunk_embedding = np.array(json.loads(embedding_json)) if isinstance(embedding_json, str) else np.array(
+                    embedding_json)
 
                 # Calcul de similarité
-                similarity = np.dot(question_vec, chunk_embedding)
+                similarity = np.dot(question_vec, chunk_embedding) / (
+                        np.linalg.norm(question_vec) * np.linalg.norm(chunk_embedding)
+                )
 
                 similarities.append({
                     'similarity': float(similarity),
                     'text': text,
                     'document_id': doc_id,
                     'document_name': f"Doc_{doc_id}",
-                    'raw_data': chunk_data  # Garde les données originales si besoin
+                    'raw_data': chunk_data
                 })
-                processed += 1
 
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                continue  # Skip les chunks avec des erreurs
-
-        print(f"✅ {processed} embeddings traités avec succès")
+            except (json.JSONDecodeError, ValueError, KeyError):
+                continue
 
         if not similarities:
+            print("❌ AUCUNE SIMILARITÉ CALCULÉE")
             return []
 
         # Tri par similarité décroissante
         similarities.sort(key=lambda x: x['similarity'], reverse=True)
         top_chunks = similarities[:top_k]
 
-        print(f"🎯 Top {len(top_chunks)} chunks sélectionnés")
+        print(f"🎯 Top {len(top_chunks)} chunks sélectionnés sur {len(similarities)} total")
         return top_chunks
 
     def debug_chunks(self, chunks, question):

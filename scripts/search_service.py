@@ -25,6 +25,7 @@ class RAGSearcher:
         self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
         print("✅ Modèle d'embedding chargé")
 
+
     def connect_filemaker(self):
         """Établit une connexion fraîche à FileMaker"""
         extractor = FileMakerExtractor()
@@ -34,6 +35,35 @@ class RAGSearcher:
         else:
             print("❌ Échec connexion FileMaker")
             return None
+
+    def enhanced_search(self, extractor, question):
+        """Recherche élargie pour questions comparatives"""
+        print(f"🔍 Enhanced search pour: '{question}'")
+
+        # Recherche normale d'abord
+        chunks_direct = extractor.search_chunks_smart(question, limit=500)
+
+        # Si question comparative, recherche élargie
+        comparative_words = ["plus grand", "meilleur", "plus petit", "maximum", "minimum", "compare"]
+        if any(word in question.lower() for word in comparative_words):
+            print("🔍 Question comparative détectée - recherche élargie")
+            # Recherche avec mots-clés génériques
+            chunks_broad = extractor.search_chunks_smart("capital montant valeur prix", limit=500)
+
+            # Combinaison et déduplication par recordId
+            seen_ids = set()
+            combined_chunks = []
+
+            for chunk in chunks_direct + chunks_broad:
+                record_id = chunk.get('recordId')
+                if record_id not in seen_ids:
+                    seen_ids.add(record_id)
+                    combined_chunks.append(chunk)
+
+            print(f"✅ {len(combined_chunks)} chunks uniques après déduplication")
+            return combined_chunks[:1000]
+
+        return chunks_direct
 
     def search(self, question):
         """Recherche principale avec gestion complète"""
@@ -49,7 +79,7 @@ class RAGSearcher:
 
             # 2️⃣ RECHERCHE TEXTUELLE PRÉALABLE
             print(f"🔍 Phase 1: Recherche textuelle...")
-            raw_chunks = extractor.search_chunks_smart(question, limit=1000)
+            raw_chunks = self.enhanced_search(extractor, question)
 
             if not raw_chunks:
                 print("❌ Aucun chunk trouvé")

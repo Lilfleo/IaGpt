@@ -112,6 +112,45 @@ class FileMakerExtractor:
 
         return True
 
+    def get_all_chunks_sample(self, limit=1000):
+        """Récupère un échantillon de tous les chunks sans filtre"""
+        if not self._check_connection():
+            return []
+
+        url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/records"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        params = {
+            '_limit': str(min(limit, 1000))
+        }
+
+        try:
+            self.logger.info(f"🎯 Récupération échantillon: {limit} chunks")
+
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                verify=False,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                chunks = data['response']['data']
+                self.logger.info(f"✅ {len(chunks)} chunks récupérés")
+                return chunks
+            else:
+                self.logger.error(f"❌ Erreur: {response.status_code}")
+                return []
+
+        except Exception as e:
+            self.logger.error(f"❌ Exception: {str(e)}")
+            return []
+
     def _check_connection(self):
         """Vérifie que la connexion est active"""
         if not self.token or not self.session_active:
@@ -438,7 +477,6 @@ class FileMakerExtractor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Nettoyage automatique à la sortie du context manager"""
         self.logout()
-
 
 # Test rapide si le script est exécuté directement
 if __name__ == "__main__":

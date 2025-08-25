@@ -1,8 +1,13 @@
-#!/usr/bin/env python3
 import requests
-import json
-import logging
+import base64
 import urllib3
+import logging
+import json
+from dotenv import load_dotenv
+import os
+
+# !/usr/bin/env python3
+
 
 # Désactive les avertissements SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -10,11 +15,11 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class FileMakerExtractor:
     def __init__(self):
-        # Configuration - AJUSTEZ vos paramètres
-        self.server = "https://votre-serveur-filemaker.com"
-        self.database = "votre-base"
-        self.username = "votre-username"
-        self.password = "votre-password"
+        load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'config.env'))
+        self.server = os.getenv('FILEMAKER_SERVER')
+        self.database = os.getenv('FILEMAKER_DATABASE')
+        self.username = os.getenv('FILEMAKER_USERNAME')
+        self.password = os.getenv('FILEMAKER_PASSWORD')
         self.token = None
 
         # Logger

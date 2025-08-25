@@ -49,7 +49,7 @@ class RAGSearcher:
         finally:
             self.extractor.logout()
 
-    def search_with_pagination(self, question, top_k=5):
+    def search_with_pagination(self, question, top_k=20):
         """Recherche avec pagination pour éviter la surcharge mémoire"""
         print(f"🧠 Encoding de la question...")
 

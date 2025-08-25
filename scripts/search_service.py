@@ -60,6 +60,15 @@ class RAGSearcher:
             # 3️⃣ CALCUL SIMILARITÉS SÉMANTIQUES
             print(f"🧮 Phase 2: Calcul des similarités...")
             top_chunks = self.calculate_similarities(question, raw_chunks)
+            # APRÈS la ligne top_chunks = self.calculate_similarities(...)
+            print("🔍 DEBUG - TOP 3 CHUNKS TROUVÉS :")
+            for i, chunk in enumerate(top_chunks[:3]):
+                chunk_data = chunk['fieldData'] if 'fieldData' in chunk else chunk
+                print(f"  Chunk {i + 1}: Doc {chunk_data.get('idDocument', 'N/A')}")
+                print(f"    Similarité: {chunk.get('similarity', 'N/A'):.4f}")
+                print(f"    Texte (50 chars): '{chunk_data.get('Text', '')[:50]}...'")
+                print(f"    A des embeddings: {'OUI' if chunk_data.get('EmbeddingJson') else 'NON'}")
+                print()
 
             if not top_chunks:
                 return self.empty_response(question, "Aucun chunk avec embedding valide trouvé")

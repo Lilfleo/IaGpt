@@ -230,33 +230,47 @@ class FileMakerExtractor:
             self.logger.warning("Aucun mot-clé trouvé dans la question")
             return []
 
-        # Construire la requête OR pour FileMaker
-        query_conditions = []
-        for keyword in keywords[:8]:  # Limiter à 8 mots max
-            query_conditions.append({"Text": f"*{keyword}*"})
-
+        # URL pour la recherche FileMaker
         url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/_find"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.token}'
         }
 
+        # Construire la requête OR pour FileMaker
+        query_conditions = []
+        for keyword in keywords[:8]:  # Limite à 8 mots-clés
+            query_conditions.append({"Text": f"*{keyword}*"})
+
         payload = {
             "query": query_conditions,
-            "limit": str(limit)
+            "limit": str(min(limit, 1000))  # FileMaker limite à 1000
         }
 
         try:
+            print(f"🔍 Recherche FileMaker avec: {[k for k in keywords[:8]]}")
+
             response = requests.post(url, json=payload, headers=headers, verify=False)
 
             if response.status_code == 200:
                 data = response.json()
                 chunks = data['response']['data']
-                self.logger.info(f"✅ {len(chunks)} chunks trouvés avec recherche textuelle")
-                return chunks
-            elif response.status_code == 401:
-                self.logger.error("❌ Erreur 401: Token expiré")
-                return []
+
+                print(f"✅ {len(chunks)} chunks trouvés dans FileMaker")
+
+                # Convertir au format attendu
+                result_chunks = []
+                for chunk in chunks:
+                    chunk_data = chunk['fieldData']
+                    result_chunks.append({
+                        'idChunk': chunk['recordId'],
+                        'idDocument': chunk_data.get('idDocument', ''),
+                        'Text': chunk_data.get('Text', ''),
+                        'EmbeddingJson': chunk_data.get('EmbeddingJson', '')
+                    })
+
+                return result_chunks
+
             else:
                 self.logger.error(f"❌ Erreur recherche: {response.status_code} - {response.text}")
                 return []

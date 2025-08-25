@@ -50,95 +50,61 @@ class RAGSearcher:
             self.extractor.logout()
 
     def search_with_pagination(self, question, top_k=20):
-        """Recherche avec pagination pour éviter la surcharge mémoire"""
-        print(f"🧠 Encoding de la question...")
+        """Recherche hybride: FileMaker + Embedding"""
+        print(f"🧠 Recherche hybride pour: '{question}'")
 
-        # 1. Encoder la question
+        # 1️⃣ RECHERCHE TEXTUELLE PRÉALABLE
+        print(f"🔍 Phase 1: Recherche textuelle dans FileMaker...")
+        filtered_chunks = self.extractor.search_chunks_smart(question, limit=2000)
+
+        if not filtered_chunks:
+            print("❌ Aucun chunk trouvé avec la recherche textuelle")
+            return []
+
+        print(f"📊 {len(filtered_chunks)} chunks pré-filtrés par recherche textuelle")
+
+        # 2️⃣ CALCUL D'EMBEDDING SUR LES RÉSULTATS FILTRÉS
+        print(f"🧮 Phase 2: Calcul des similarités sémantiques...")
         question_embedding = self.model.encode([question])
         question_vec = question_embedding[0]
 
-        # 2. Recherche par batch
-        all_similarities = []
-        batch_size = 100
-        offset = 1
-        total_processed = 0
+        similarities = []
+        processed = 0
 
-        print(f"📊 Début de l'analyse par batch...")
+        for chunk_record in filtered_chunks:
+            chunk_data = chunk_record['fieldData']
+            text = chunk_data.get('Text', '')
+            embedding_json = chunk_data.get('EmbeddingJson', '')
 
-        while True:
-            print(f"📄 Traitement batch offset {offset}...")
+            if text and embedding_json and embedding_json.strip():
+                try:
+                    chunk_embedding = np.array(json.loads(embedding_json))
+                    similarity = np.dot(question_vec, chunk_embedding)
 
-            # Récupérer un batch
-            url = f"{self.extractor.server}/fmi/data/v1/databases/{self.extractor.database}/layouts/Chunks/records"
-            headers = {'Authorization': f'Bearer {self.extractor.token}'}
-            params = {'_offset': offset, '_limit': batch_size}
+                    similarities.append({
+                        'similarity': float(similarity),
+                        'text': text,
+                        'document_id': chunk_data.get('idDocument', ''),
+                        'document_name': f"Doc_{chunk_data.get('idDocument', 'N/A')}"
+                    })
+                    processed += 1
 
-            response = requests.get(url, headers=headers, params=params, verify=False)
+                except (json.JSONDecodeError, ValueError) as e:
+                    continue
 
-            if response.status_code != 200:
-                print(f"❌ Erreur HTTP: {response.status_code}")
-                break
+        print(f"✅ {processed} embeddings traités avec succès")
 
-            data = response.json()
-            records = data.get('response', {}).get('data', [])
-
-            if not records:
-                print("📭 Plus de records")
-                break
-
-            print(f"📋 {len(records)} records dans ce batch")
-
-            # Calculer similarités pour ce batch
-            batch_similarities = []
-            for rec in records:
-                text = rec['fieldData'].get('Text', '')
-                embedding_json = rec['fieldData'].get('EmbeddingJson', '')
-
-                if text and embedding_json:
-                    try:
-                        chunk_emb = np.array(json.loads(embedding_json))
-                        similarity = np.dot(question_vec, chunk_emb)
-
-                        batch_similarities.append({
-                            'similarity': float(similarity),
-                            'text': text,
-                            'document_id': rec['fieldData'].get('idDocument', ''),
-                            'document_name': rec['fieldData'].get('DocumentName',
-                                                                  f"Doc_{rec['fieldData'].get('idDocument', 'X')}")
-                        })
-                    except Exception as e:
-                        print(f"⚠️ Erreur embedding: {e}")
-                        continue
-
-            all_similarities.extend(batch_similarities)
-            total_processed += len(batch_similarities)
-
-            print(f"✅ {len(batch_similarities)} chunks valides dans ce batch")
-
-            # Arrêter si batch incomplet
-            if len(records) < batch_size:
-                print("📄 Dernier batch atteint")
-                break
-
-            offset += batch_size
-
-            # Limitation pour éviter timeout (optionnel)
-            if total_processed >= 5000:
-                print("⚠️ Limite de 5000 chunks atteinte pour éviter timeout")
-                break
-
-        print(f"📊 TOTAL: {total_processed} chunks analysés")
-
-        if not all_similarities:
+        if not similarities:
+            print("❌ Aucun embedding valide trouvé")
             return []
 
-        # 3. Trier et prendre le top
-        all_similarities.sort(key=lambda x: x['similarity'], reverse=True)
-        top_chunks = all_similarities[:top_k]
+        # 3️⃣ TRIER PAR SIMILARITÉ
+        similarities.sort(key=lambda x: x['similarity'], reverse=True)
+        top_chunks = similarities[:top_k]
 
-        print(f"🎯 Top {len(top_chunks)} chunks sélectionnés")
-        for i, chunk in enumerate(top_chunks[:3]):  # Afficher les 3 meilleurs
-            print(f"   {i + 1}. Similarité: {chunk['similarity']:.4f} - {chunk['document_name']}")
+        print(f"🎯 Top {len(top_chunks)} chunks sélectionés:")
+        for i, chunk in enumerate(top_chunks[:5]):
+            print(f"   {i + 1}. Similarité: {chunk['similarity']:.4f} | {chunk['document_name']}")
 
         return top_chunks
 

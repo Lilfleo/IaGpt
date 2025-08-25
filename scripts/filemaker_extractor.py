@@ -5,6 +5,7 @@ import logging
 import json
 from dotenv import load_dotenv
 import os
+import re
 
 # !/usr/bin/env python3
 
@@ -192,3 +193,74 @@ class FileMakerExtractor:
                 self.logger.info("👋 Déconnexion FileMaker")
             except:
                 pass
+
+    def extract_keywords(self, question, min_length=3):
+        """Extrait automatiquement les mots-clés d'une question"""
+        # Mots vides français/anglais à ignorer
+        stop_words = {
+            'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'ou', 'est', 'sont',
+            'dans', 'sur', 'avec', 'pour', 'par', 'ce', 'cette', 'ces', 'qui', 'que', 'quoi',
+            'comment', 'combien', 'quand', 'où', 'quel', 'quelle', 'quels', 'quelles',
+            'the', 'a', 'an', 'and', 'or', 'is', 'are', 'in', 'on', 'at', 'for', 'by', 'with'
+        }
+
+        # Nettoyer et segmenter
+        words = re.findall(r'\b[a-zA-ZÀ-ÿ0-9]+\b', question.lower())
+
+        # Filtrer les mots significatifs
+        keywords = [
+            word for word in words
+            if len(word) >= min_length and word not in stop_words
+        ]
+
+        # Retourner les mots uniques
+        return list(dict.fromkeys(keywords))
+
+    def search_chunks_smart(self, question, limit=1000):
+        """Recherche intelligente avec segmentation automatique"""
+        if not self.token:
+            self.logger.error("❌ Pas de token pour la recherche")
+            return []
+
+        # Extraire les mots-clés
+        keywords = self.extract_keywords(question)
+        self.logger.info(f"🔍 Mots-clés extraits: {keywords}")
+
+        if not keywords:
+            self.logger.warning("Aucun mot-clé trouvé dans la question")
+            return []
+
+        # Construire la requête OR pour FileMaker
+        query_conditions = []
+        for keyword in keywords[:8]:  # Limiter à 8 mots max
+            query_conditions.append({"Text": f"*{keyword}*"})
+
+        url = f"{self.server}/fmi/data/v1/databases/{self.database}/layouts/Chunks/_find"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        payload = {
+            "query": query_conditions,
+            "limit": str(limit)
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, verify=False)
+
+            if response.status_code == 200:
+                data = response.json()
+                chunks = data['response']['data']
+                self.logger.info(f"✅ {len(chunks)} chunks trouvés avec recherche textuelle")
+                return chunks
+            elif response.status_code == 401:
+                self.logger.error("❌ Erreur 401: Token expiré")
+                return []
+            else:
+                self.logger.error(f"❌ Erreur recherche: {response.status_code} - {response.text}")
+                return []
+
+        except Exception as e:
+            self.logger.error(f"❌ Exception recherche: {e}")
+            return []

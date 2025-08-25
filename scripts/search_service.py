@@ -3,220 +3,346 @@ from flask import Flask, request, jsonify
 import sys
 import os
 import locale
+import json
+import requests
+import numpy as np
 
+# Configuration locale
 locale.setlocale(locale.LC_ALL, 'fr_FR.UTF-8')
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.filemaker_extractor import FileMakerExtractor
 from sentence_transformers import SentenceTransformer
-import numpy as np
-import json
-import requests
 
 app = Flask(__name__)
 
 
 class RAGSearcher:
+    """Service de recherche RAG avec FileMaker et IA"""
+
     def __init__(self):
-        self.extractor = FileMakerExtractor()
+        print("🔧 Initialisation du service RAG...")
         self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        print("✅ Modèle d'embedding chargé")
 
-    def prepare_context(self, chunks):
-        """Prépare le contexte à partir des chunks"""
-        if not chunks:
-            return "Aucun contexte disponible."
-
-        context_parts = []
-        for i, chunk in enumerate(chunks, 1):
-            text = chunk.get('text', '')[:500]  # Limite à 500 chars par chunk
-            doc_name = chunk.get('document_name', 'Document inconnu')
-            context_parts.append(f"[Source {i} - {doc_name}]: {text}")
-
-        return "\n\n".join(context_parts)
+    def connect_filemaker(self):
+        """Établit une connexion fraîche à FileMaker"""
+        extractor = FileMakerExtractor()
+        if extractor.connect():
+            print("✅ Connexion FileMaker établie")
+            return extractor
+        else:
+            print("❌ Échec connexion FileMaker")
+            return None
 
     def search(self, question):
-        """Recherche principale avec logging détaillé"""
+        """Recherche principale avec gestion complète"""
+        extractor = None
+
         try:
-            print(f"🔍 Phase 1: Recherche textuelle dans FileMaker...")
-            top_chunks = self.search_with_pagination(question, top_k=20)
+            print(f"🔍 Début de recherche pour: '{question}'")
 
-            # 🔥 DEBUG : MONTRER LES CHUNKS RÉCUPÉRÉS
-            print(f"\n🔍 CHUNKS RÉCUPÉRÉS (TOP 5):")
-            for i, chunk in enumerate(top_chunks[:5]):
-                chunk_data = chunk['fieldData'] if 'fieldData' in chunk else chunk
-                text = chunk_data.get('Text', '')[:200]
-                doc_id = chunk_data.get('idDocument', 'N/A')
-                print(f"--- CHUNK {i + 1} ---")
-                print(f"Doc: {doc_id}")
-                print(f"Texte: {text}...")
+            # 1️⃣ CONNEXION FILEMAKER
+            extractor = self.connect_filemaker()
+            if not extractor:
+                return self.error_response(question, "Impossible de se connecter à la base de données")
 
-                # Vérifier la présence des mots-clés
-                text_lower = text.lower()
-                keywords_found = []
-                if 'cristal' in text_lower: keywords_found.append('cristal')
-                if 'prix' in text_lower: keywords_found.append('prix')
-                if 'souscription' in text_lower: keywords_found.append('souscription')
-                if 'rente' in text_lower: keywords_found.append('rente')
-                if '2022' in text_lower: keywords_found.append('2022')
+            # 2️⃣ RECHERCHE TEXTUELLE PRÉALABLE
+            print(f"🔍 Phase 1: Recherche textuelle...")
+            raw_chunks = extractor.search_chunks_smart(question, limit=1000)
 
-                print(f"Mots-clés présents: {keywords_found}")
+            if not raw_chunks:
+                print("❌ Aucun chunk trouvé")
+                return self.empty_response(question, "Aucune information trouvée dans la base de données")
 
-            # Continue avec la génération...
+            print(f"📊 {len(raw_chunks)} chunks trouvés par recherche textuelle")
+
+            # 3️⃣ CALCUL SIMILARITÉS SÉMANTIQUES
+            print(f"🧮 Phase 2: Calcul des similarités...")
+            top_chunks = self.calculate_similarities(question, raw_chunks)
+
+            if not top_chunks:
+                return self.empty_response(question, "Aucun chunk avec embedding valide trouvé")
+
+            # 4️⃣ DEBUG DES CHUNKS SÉLECTIONNÉS
+            self.debug_chunks(top_chunks[:5], question)
+
+            # 5️⃣ GÉNÉRATION DE LA RÉPONSE
             context = self.prepare_context(top_chunks[:5])
-            # ... reste identique
-
             response = self.generate_answer(question, context)
 
+            # 6️⃣ RÉSULTAT FINAL
             return {
                 "question": question,
                 "response": response,
-                "sources": [chunk['document_name'] for chunk in top_chunks],
-                "chunks_analyzed": len(top_chunks)
+                "sources": [chunk['document_name'] for chunk in top_chunks[:5]],
+                "chunks_analyzed": len(top_chunks),
+                "status": "success"
             }
 
+        except Exception as e:
+            print(f"❌ ERREUR GLOBALE: {e}")
+            return self.error_response(question, f"Erreur interne: {str(e)}")
+
         finally:
-            self.extractor.logout()
+            # 7️⃣ NETTOYAGE
+            if extractor:
+                extractor.logout()
+                print("🔌 Connexion FileMaker fermée")
 
+    def calculate_similarities(self, question, raw_chunks, top_k=20):
+        """Calcule les similarités sémantiques et retourne les meilleurs chunks"""
 
-
-    def search_with_pagination(self, question, top_k=20):
-        """Recherche hybride: FileMaker + Embedding"""
-        print(f"🧠 Recherche hybride pour: '{question}'")
-
-        # 1️⃣ RECHERCHE TEXTUELLE PRÉALABLE
-        print(f"🔍 Phase 1: Recherche textuelle dans FileMaker...")
-        filtered_chunks = self.extractor.search_chunks_smart(question, limit=2000)
-
-        if not filtered_chunks:
-            print("❌ Aucun chunk trouvé avec la recherche textuelle")
-            return []
-
-        print(f"📊 {len(filtered_chunks)} chunks pré-filtrés par recherche textuelle")
-
-        # 2️⃣ CALCUL D'EMBEDDING SUR LES RÉSULTATS FILTRÉS
-        print(f"🧮 Phase 2: Calcul des similarités sémantiques...")
+        # Embedding de la question
         question_embedding = self.model.encode([question])
         question_vec = question_embedding[0]
 
         similarities = []
         processed = 0
 
-        for chunk_record in filtered_chunks:
-            chunk_data = chunk_record['fieldData']
-            text = chunk_data.get('Text', '')
-            embedding_json = chunk_data.get('EmbeddingJson', '')
+        for chunk_record in raw_chunks:
+            try:
+                # Extraction des données du chunk
+                chunk_data = chunk_record['fieldData'] if 'fieldData' in chunk_record else chunk_record
+                text = chunk_data.get('Text', '').strip()
+                embedding_json = chunk_data.get('EmbeddingJson', '').strip()
+                doc_id = chunk_data.get('idDocument', 'N/A')
 
-            if text and embedding_json and embedding_json.strip():
-                try:
-                    chunk_embedding = np.array(json.loads(embedding_json))
-                    similarity = np.dot(question_vec, chunk_embedding)
-
-                    similarities.append({
-                        'similarity': float(similarity),
-                        'text': text,
-                        'document_id': chunk_data.get('idDocument', ''),
-                        'document_name': f"Doc_{chunk_data.get('idDocument', 'N/A')}"
-                    })
-                    processed += 1
-
-                except (json.JSONDecodeError, ValueError) as e:
+                # Validation du contenu
+                if not text or not embedding_json:
                     continue
+
+                # Parsing de l'embedding
+                chunk_embedding = np.array(json.loads(embedding_json))
+
+                # Calcul de similarité
+                similarity = np.dot(question_vec, chunk_embedding)
+
+                similarities.append({
+                    'similarity': float(similarity),
+                    'text': text,
+                    'document_id': doc_id,
+                    'document_name': f"Doc_{doc_id}",
+                    'raw_data': chunk_data  # Garde les données originales si besoin
+                })
+                processed += 1
+
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                continue  # Skip les chunks avec des erreurs
 
         print(f"✅ {processed} embeddings traités avec succès")
 
         if not similarities:
-            print("❌ Aucun embedding valide trouvé")
             return []
 
-        # 3️⃣ TRIER PAR SIMILARITÉ
+        # Tri par similarité décroissante
         similarities.sort(key=lambda x: x['similarity'], reverse=True)
         top_chunks = similarities[:top_k]
 
-        print(f"🎯 Top {len(top_chunks)} chunks sélectionés:")
-        for i, chunk in enumerate(top_chunks[:5]):
-            print(f"   {i + 1}. Similarité: {chunk['similarity']:.4f} | {chunk['document_name']}")
-
+        print(f"🎯 Top {len(top_chunks)} chunks sélectionnés")
         return top_chunks
+
+    def debug_chunks(self, chunks, question):
+        """Affiche le debug des chunks sélectionnés"""
+        print(f"\n🔍 DEBUG - TOP {len(chunks)} CHUNKS:")
+
+        # Mots-clés de recherche pour le debug
+        question_words = question.lower().split()
+
+        for i, chunk in enumerate(chunks, 1):
+            text_preview = chunk['text'][:200]
+            similarity = chunk['similarity']
+            doc_name = chunk['document_name']
+
+            print(f"--- CHUNK {i} ---")
+            print(f"📄 Document: {doc_name}")
+            print(f"🎯 Similarité: {similarity:.4f}")
+            print(f"📝 Extrait: {text_preview}...")
+
+            # Recherche de mots-clés dans le texte
+            text_lower = chunk['text'].lower()
+            keywords_found = [word for word in question_words if word in text_lower and len(word) > 2]
+
+            if keywords_found:
+                print(f"🔍 Mots-clés trouvés: {keywords_found}")
+            else:
+                print(f"⚠️  Aucun mot-clé direct trouvé")
+
+            print()
+
+    def prepare_context(self, chunks):
+        """Prépare le contexte pour l'IA à partir des chunks"""
+        if not chunks:
+            return "Aucun contexte disponible."
+
+        context_parts = []
+        for i, chunk in enumerate(chunks, 1):
+            text = chunk['text'][:600]  # Limite à 600 chars par chunk
+            doc_name = chunk['document_name']
+            similarity = chunk['similarity']
+
+            context_parts.append(
+                f"[Source {i} - {doc_name} (pertinence: {similarity:.3f})]\n{text}"
+            )
+
+        return "\n\n" + "=" * 50 + "\n\n".join(context_parts)
 
     def generate_answer(self, question, context):
         """Génère la réponse avec Ollama"""
         print("🤖 Génération de la réponse avec Ollama...")
 
-        prompt = f"""Contexte: {context}
+        prompt = f"""Tu es un assistant IA spécialisé dans l'analyse de documents financiers.
 
-Question: {question}
+CONTEXTE:
+{context}
 
-Réponds en français en te basant uniquement sur le contexte fourni. Si le contexte ne permet pas de répondre, dis-le clairement."""
+QUESTION: {question}
+
+INSTRUCTIONS:
+- Réponds uniquement en français
+- Base-toi EXCLUSIVEMENT sur les informations fournies dans le contexte
+- Si une information précise n'est pas dans le contexte, dis-le clairement
+- Cite les sources (Doc_XXX) quand tu donnes une information
+- Sois précis et factuel
+
+RÉPONSE:"""
 
         try:
-            response = requests.post('http://localhost:11434/api/generate',
-                                     json={
-                                         'model': 'llama3.2:1b',
-                                         'prompt': prompt,
-                                         'stream': False
-                                     },
-                                     timeout=30)
+            response = requests.post(
+                'http://localhost:11434/api/generate',
+                json={
+                    'model': 'llama3.2:1b',
+                    'prompt': prompt,
+                    'stream': False,
+                    'options': {
+                        'temperature': 0.1,  # Plus déterministe
+                        'num_ctx': 4096  # Plus de contexte
+                    }
+                },
+                timeout=45
+            )
 
             if response.status_code == 200:
-                result = response.json().get('response', 'Erreur génération')
+                result = response.json().get('response', '').strip()
                 print("✅ Réponse générée avec succès")
-                return result
+                return result if result else "Erreur: Réponse vide générée"
             else:
                 print(f"❌ Erreur Ollama: {response.status_code}")
                 return "Erreur: Service IA indisponible"
 
         except requests.exceptions.Timeout:
-            return "Erreur: Timeout du service IA"
+            print("❌ Timeout Ollama")
+            return "Erreur: Le service IA a pris trop de temps à répondre"
         except Exception as e:
             print(f"❌ Exception Ollama: {e}")
-            return f"Erreur: {str(e)}"
+            return f"Erreur service IA: {str(e)}"
+
+    def error_response(self, question, message):
+        """Génère une réponse d'erreur standardisée"""
+        return {
+            "question": question,
+            "response": message,
+            "sources": [],
+            "chunks_analyzed": 0,
+            "status": "error"
+        }
+
+    def empty_response(self, question, message):
+        """Génère une réponse vide standardisée"""
+        return {
+            "question": question,
+            "response": message,
+            "sources": [],
+            "chunks_analyzed": 0,
+            "status": "no_results"
+        }
 
 
-# Instance globale
+# Instance globale du service
+print("🚀 Création de l'instance RAG...")
 searcher = RAGSearcher()
+print("✅ Service RAG initialisé")
 
 
 @app.route('/search', methods=['POST'])
-def search():
+def search_endpoint():
+    """Endpoint principal de recherche"""
     try:
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("🔍 NOUVELLE REQUÊTE REÇUE")
-        print("=" * 50)
+        print("=" * 60)
 
+        # Récupération de la question
         data = request.get_json()
+        if not data:
+            return jsonify({"error": "Pas de données JSON reçues"}), 400
+
         question = data.get('question', '').strip()
+
+        if not question:
+            return jsonify({"error": "Question manquante ou vide"}), 400
 
         print(f"📝 Question: '{question}'")
 
-        if not question:
-            return jsonify({"error": "Question manquante"}), 400
-
-        print("🚀 Début de la recherche...")
-
-        # Appel de la recherche
+        # Lancement de la recherche
         result = searcher.search(question)
 
-        print("✅ Recherche terminée avec succès")
-        print("=" * 50)
+        print(f"✅ Recherche terminée - Status: {result.get('status', 'unknown')}")
+        print("=" * 60)
 
         return jsonify(result)
 
     except Exception as e:
-        print(f"❌ ERREUR GLOBALE: {e}")
+        print(f"❌ ERREUR ENDPOINT: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Erreur serveur: {str(e)}",
+            "status": "error"
+        }), 500
 
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Endpoint de santé"""
-    return jsonify({"status": "OK", "service": "RAG API"})
+    """Endpoint de santé du service"""
+    try:
+        # Test de connexion FileMaker
+        extractor = FileMakerExtractor()
+        fm_ok = extractor.connect()
+        if fm_ok:
+            extractor.logout()
+
+        # Test Ollama
+        try:
+            ollama_response = requests.get('http://localhost:11434/api/tags', timeout=5)
+            ollama_ok = ollama_response.status_code == 200
+        except:
+            ollama_ok = False
+
+        return jsonify({
+            "status": "OK" if (fm_ok and ollama_ok) else "PARTIAL",
+            "service": "RAG API",
+            "components": {
+                "filemaker": "OK" if fm_ok else "ERROR",
+                "ollama": "OK" if ollama_ok else "ERROR",
+                "embeddings": "OK"
+            },
+            "version": "2.0"
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "ERROR",
+            "error": str(e)
+        }), 500
 
 
 if __name__ == '__main__':
-    print("🚀 Démarrage du serveur RAG...")
+    print("\n🚀 DÉMARRAGE DU SERVEUR RAG")
+    print("=" * 40)
     print("📡 URL: http://localhost:9000")
-    print("🔍 Endpoint: POST /search")
-    print("💚 Health: GET /health")
+    print("🔍 Recherche: POST /search")
+    print("💚 Santé: GET /health")
+    print("=" * 40)
+
     app.run(host='0.0.0.0', port=9000, debug=True)

@@ -21,6 +21,19 @@ class RAGSearcher:
         self.extractor = FileMakerExtractor()
         self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
+    def prepare_context(self, chunks):
+        """Prépare le contexte à partir des chunks"""
+        if not chunks:
+            return "Aucun contexte disponible."
+
+        context_parts = []
+        for i, chunk in enumerate(chunks, 1):
+            text = chunk.get('text', '')[:500]  # Limite à 500 chars par chunk
+            doc_name = chunk.get('document_name', 'Document inconnu')
+            context_parts.append(f"[Source {i} - {doc_name}]: {text}")
+
+        return "\n\n".join(context_parts)
+
     def search(self, question):
         """Recherche principale avec logging détaillé"""
         try:
@@ -63,6 +76,8 @@ class RAGSearcher:
 
         finally:
             self.extractor.logout()
+
+
 
     def search_with_pagination(self, question, top_k=20):
         """Recherche hybride: FileMaker + Embedding"""

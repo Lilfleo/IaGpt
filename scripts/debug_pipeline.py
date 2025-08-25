@@ -2,15 +2,19 @@
 import sys
 import os
 
-sys.path.append('/opt/filemaker-ai-poc')
+# Ajoutez le bon chemin
+sys.path.append('/opt/filemaker-ai-poc/IaGpt')
+sys.path.append('/opt/filemaker-ai-poc/IaGpt/scripts')
 
-from IaGpt.services.filemaker_extractor import FileMakerExtractor
+# Maintenant l'import direct
+from filemaker_extractor import FileMakerExtractor
 import json
 import requests
 
-
 def debug_complete_pipeline():
     print("🔍 DEBUG COMPLET DU PIPELINE")
+    # ... reste du code identique
+
     print("=" * 60)
 
     extractor = FileMakerExtractor()

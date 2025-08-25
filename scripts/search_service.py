@@ -271,21 +271,16 @@ class RAGSearcher:
         """Génère la réponse avec Ollama"""
         print("🤖 Génération de la réponse avec Ollama...")
 
-        prompt = f"""Tu es un assistant IA spécialisé dans l'analyse de documents financiers.
+        prompt = f"""Tu es un expert financier. Analyse ces documents pour répondre à la question.
 
-CONTEXTE:
-{context}
+        QUESTION: {question}
 
-QUESTION: {question}
+        CONTEXTE:
+        {context}
 
-INSTRUCTIONS:
-- Réponds uniquement en français
-- Base-toi EXCLUSIVEMENT sur les informations fournies dans le contexte
-- Si une information précise n'est pas dans le contexte, dis-le clairement
-- Cite les sources (Doc_XXX) quand tu donnes une information
-- Sois précis et factuel
+        IMPORTANT: Si on te demande le prix d'UNE souscription et que tu vois un montant TOTAL pour PLUSIEURS parts, tu DOIS calculer le prix unitaire (montant total ÷ nombre de parts).
 
-RÉPONSE:"""
+        Montre ton raisonnement étape par étape:"""
 
         try:
             response = requests.post(

@@ -372,18 +372,7 @@ class FileMakerExtractor:
             return []
 
     def create_chunk(self, idDocument, chunk_text, chunk_index, embeddings=None):
-        """
-        Crée un nouveau chunk dans FileMaker
-
-        Args:
-            idDocument (str): ID du document parent
-            chunk_text (str): Texte du chunk
-            chunk_index (int): Index du chunk dans le document
-            embeddings (list, optional): Vecteur d'embedding
-
-        Returns:
-            bool: Succès de la création
-        """
+        """Crée un nouveau chunk dans FileMaker avec tous les champs"""
         if not self._check_connection():
             return False
 
@@ -393,27 +382,32 @@ class FileMakerExtractor:
             'Authorization': f'Bearer {self.token}'
         }
 
-        # Préparation des données
+        # ✅ TOUS les champs corrects maintenant !
         field_data = {
             "idDocument": str(idDocument),
             "Text": chunk_text,
-            "ChunkIndex": chunk_index
+            "ChunkIndex": chunk_index  # ✅ Maintenant ça existe !
         }
 
-        # Ajout des embeddings si fournis
+        # ✅ Nom de champ corrigé
         if embeddings:
-            field_data["Embeddings"] = json.dumps(embeddings)
+            if isinstance(embeddings, str):
+                field_data["EmbeddingJson"] = embeddings
+            else:
+                field_data["EmbeddingJson"] = json.dumps(embeddings)
 
         payload = {"fieldData": field_data}
 
         try:
-            response = requests.post(url, json=payload, headers=headers, verify=False)
+            response = requests.post(url, json=payload, headers=headers, verify=False, timeout=30)
 
             if response.status_code in [200, 201]:
                 self.logger.debug(f"✅ Chunk créé: doc={idDocument}, index={chunk_index}")
                 return True
             else:
                 self.logger.error(f"❌ Erreur création chunk: {response.status_code}")
+                if response.text:
+                    self.logger.error(f"Détails: {response.text[:500]}")
                 return False
 
         except Exception as e:
